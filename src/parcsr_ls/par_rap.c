@@ -354,7 +354,7 @@ hypre_BoomerAMGBuildCoarseOperatorKT( hypre_ParCSRMatrix  *RT,
    
    HYPRE_Int              ic, i, j, k;
    HYPRE_Int              i1, i2, i3, ii, ns, ne, size, rest;
-   HYPRE_Int              cnt = 0; /*value; */
+   HYPRE_Int              cnt = 0, cnt_offd = 0, cnt_diag = 0; /*value; */
    HYPRE_Int              jj1, jj2, jj3, jcol;
    
    HYPRE_Int             *jj_count, *jj_cnt_diag, *jj_cnt_offd;
@@ -371,6 +371,7 @@ hypre_BoomerAMGBuildCoarseOperatorKT( hypre_ParCSRMatrix  *RT,
    
    HYPRE_Real       zero = 0.0;
    HYPRE_Int 	   *prefix_sum_workspace;
+   HYPRE_Int*		ic_i_to_j_map = 0;
 
    /*-----------------------------------------------------------------------
     *  Copy ParCSRMatrix RT into CSRMatrix R so that we have row-wise access 
@@ -1357,6 +1358,33 @@ hypre_BoomerAMGBuildCoarseOperatorKT( hypre_ParCSRMatrix  *RT,
    }   
 
    /*-----------------------------------------------------------------------
+   *  Build ic i to j map.
+   *-----------------------------------------------------------------------*/
+   
+#ifndef HYPRE_CONCURRENT_HOPSCOTCH
+   ic_i_to_j_map = hypre_CTAlloc(HYPRE_Int, num_sends_RT*(ne-ns), HYPRE_MEMORY_HOST);
+   for (ic = 0; ic < num_sends_RT*(ne-ns); ic++)
+   {
+	   ic_i_to_j_map[ic] = -1;
+   }
+
+   for (i=0; i < num_sends_RT; i++)
+   {
+	   for (j = send_map_starts_RT[i]; j < send_map_starts_RT[i+1]; j++)
+	   {
+		   ic = send_map_elmts_RT[j];
+		   if( ic >= ns && ic < ne  )
+		   {
+			   if( ic_i_to_j_map[(ic-ns)*num_sends_RT + i] < 0 )
+			   {
+				   ic_i_to_j_map[(ic-ns)*num_sends_RT + i] = j;
+			   }
+		   }
+	   }
+   }
+#endif
+
+   /*-----------------------------------------------------------------------
     *  Loop over interior c-points.
     *-----------------------------------------------------------------------*/
    
@@ -1407,10 +1435,11 @@ hypre_BoomerAMGBuildCoarseOperatorKT( hypre_ParCSRMatrix  *RT,
         } // if (set)
       }
 #else /* !HYPRE_CONCURRENT_HOPSCOTCH */
-      for (i=0; i < num_sends_RT; i++)
-        for (j = send_map_starts_RT[i]; j < send_map_starts_RT[i+1]; j++)
-            if (send_map_elmts_RT[j] == ic)
-            {
+	  for (i=0; i < num_sends_RT; i++)
+	  {
+		  j = ic_i_to_j_map[(ic-ns)*num_sends_RT + i];
+		  if( j>=0 )
+		  {
                 for (k=RAP_ext_i[j]; k < RAP_ext_i[j+1]; k++)
                 {
                    jcol = RAP_ext_j[k];
@@ -1431,8 +1460,8 @@ hypre_BoomerAMGBuildCoarseOperatorKT( hypre_ParCSRMatrix  *RT,
                         }
                    }
                 }
-                break;
             }
+	  }
 #endif /* !HYPRE_CONCURRENT_HOPSCOTCH */
 
       /*--------------------------------------------------------------------
@@ -1766,10 +1795,11 @@ hypre_BoomerAMGBuildCoarseOperatorKT( hypre_ParCSRMatrix  *RT,
         } // if (set)
       }
 #else /* !HYPRE_CONCURRENT_HOPSCOTCH */
-      for (i=0; i < num_sends_RT; i++)
-        for (j = send_map_starts_RT[i]; j < send_map_starts_RT[i+1]; j++)
-            if (send_map_elmts_RT[j] == ic)
-            {
+	  for (i=0; i < num_sends_RT; i++)
+	  {
+		  j = ic_i_to_j_map[(ic-ns)*num_sends_RT + i];
+		  if( j>=0 )
+		  {
                 for (k=RAP_ext_i[j]; k < RAP_ext_i[j+1]; k++)
                 {
                    jcol = RAP_ext_j[k];
@@ -1803,8 +1833,8 @@ hypre_BoomerAMGBuildCoarseOperatorKT( hypre_ParCSRMatrix  *RT,
                                         += RAP_ext_data[k];
                    }
                 }
-                break;
-            }
+		  }
+	  }
 #endif /* !HYPRE_CONCURRENT_HOPSCOTCH */
 
       /*--------------------------------------------------------------------
@@ -2182,6 +2212,11 @@ hypre_BoomerAMGBuildCoarseOperatorKT( hypre_ParCSRMatrix  *RT,
    }
    hypre_TFree(send_map_elmts_starts_RT_aggregated, HYPRE_MEMORY_HOST);
    hypre_TFree(send_map_elmts_RT_aggregated, HYPRE_MEMORY_HOST);
+#else /*!HYPRE_CONCURRENT_HOPSCOTCH*/
+   if( ic_i_to_j_map )
+   {
+	   hypre_TFree(ic_i_to_j_map, HYPRE_MEMORY_HOST);
+   }
 #endif
 
 #ifdef HYPRE_PROFILE
