@@ -161,10 +161,19 @@ void hypre_swap_d( HYPRE_Real *v,
 /*--------------------------------------------------------------------------
  *--------------------------------------------------------------------------*/
 
+int cmpfunc (const void * a, const void * b)
+{
+	return ( *(HYPRE_Int*)a - *(HYPRE_Int*)b );
+}
+
 void hypre_qsort0( HYPRE_Int *v,
              HYPRE_Int  left,
              HYPRE_Int  right )
 {
+   qsort( v, right+1, sizeof(HYPRE_Int), cmpfunc );
+   return;
+
+   /* DEPRECATED VERSION, i.e., gives stack overflow crashes in some cases
    HYPRE_Int i, last;
 
    if (left >= right)
@@ -179,6 +188,7 @@ void hypre_qsort0( HYPRE_Int *v,
    hypre_swap(v, left, last);
    hypre_qsort0(v, left, last-1);
    hypre_qsort0(v, last+1, right);
+   */
 }
 
 /*--------------------------------------------------------------------------
